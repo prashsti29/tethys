@@ -1,0 +1,27 @@
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Environment files
+.env
+.env.local
+
+# Python byte-code & caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Generated audio outputs
+output_response.wav
+
+# Large model binaries
+models/**/*.onnx
+models/**/*.onnx.json
+
+# IDE & System
+.vscode/
+.idea/
+.DS_Store
+*.swp
