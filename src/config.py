@@ -18,6 +18,10 @@ class Settings(BaseModel):
     REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
 
+    # Ollama Settings
+    OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
+
     # Model & Voice Pipeline Settings
     WHISPER_MODEL_SIZE: str = os.getenv("WHISPER_MODEL_SIZE", "base")
     WHISPER_DEVICE: str = os.getenv("WHISPER_DEVICE", "cpu")

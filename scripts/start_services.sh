@@ -34,5 +34,19 @@ else
         redis:7-alpine
 fi
 
+# 3. Ollama
+if [ "$(docker ps -aq -f name=voice_assistant_ollama)" ]; then
+    echo "Starting existing voice_assistant_ollama container..."
+    docker start voice_assistant_ollama
+else
+    echo "Creating and starting voice_assistant_ollama container..."
+    docker run -d \
+        --name voice_assistant_ollama \
+        --restart always \
+        -p 11434:11434 \
+        -v voice_assistant_ollama_data:/root/.ollama \
+        ollama/ollama:latest
+fi
+
 echo "=== Services Started Successfully ==="
 docker ps -f name=voice_assistant
