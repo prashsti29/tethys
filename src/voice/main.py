@@ -12,7 +12,7 @@ from pipecat.frames.frames import (
     TranscriptionFrame,
 )
 from pipecat.pipeline.pipeline import Pipeline
-from pipecat.pipeline.runner import PipelineRunner
+from pipecat.workers.runner import WorkerRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.transports.local.audio import LocalAudioTransport, LocalAudioParams
@@ -108,7 +108,7 @@ async def main():
     ])
 
     task = PipelineTask(pipeline, PipelineParams(allow_interruptions=True))
-    runner = PipelineRunner()
+    runner = WorkerRunner()
 
     try:
         await runner.run(task)
