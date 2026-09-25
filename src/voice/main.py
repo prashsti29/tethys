@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-"""
-src/voice/main.py
-
-Live voice pipeline entry point.
-Wires:  Microphone → Whisper STT → OrchestratorProcessor → Piper TTS → Speaker
-
-Usage:
-    source .venv/bin/activate
-    python src/voice/main.py
-"""
 import asyncio
 import logging
 import sys

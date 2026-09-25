@@ -22,10 +22,6 @@ logger = logging.getLogger(__name__)
 
 
 class TranscriptToTextProcessor(FrameProcessor):
-    """
-    Converts transcription frames into text frames to feed downstream TTS.
-    Captures full text transcript for verification & logging.
-    """
 
     def __init__(self):
         super().__init__()
@@ -46,9 +42,6 @@ class TranscriptToTextProcessor(FrameProcessor):
 
 
 class AudioSaverProcessor(FrameProcessor):
-    """
-    Collects generated synthesized audio frames from Piper TTS into a list.
-    """
 
     def __init__(self):
         super().__init__()
