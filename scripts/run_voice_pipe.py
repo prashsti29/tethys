@@ -22,6 +22,7 @@ from pipecat.pipeline.task import PipelineParams, PipelineTask
 
 from src.voice.pipeline import (
     AudioSaverProcessor,
+    OrchestratorProcessor,
     TranscriptToTextProcessor,
     create_piper_tts,
     create_whisper_stt,
@@ -59,10 +60,11 @@ async def main():
     logger.info("--- Initializing Voice Pipeline Components ---")
     stt = create_whisper_stt()
     transcript_proc = TranscriptToTextProcessor()
+    orchestrator_proc = OrchestratorProcessor(patient_name="Test Patient")
     tts = create_piper_tts()
     audio_saver = AudioSaverProcessor()
 
-    pipeline = Pipeline([stt, transcript_proc, tts, audio_saver])
+    pipeline = Pipeline([stt, transcript_proc, orchestrator_proc, tts, audio_saver])
     task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=False))
     runner = PipelineRunner()
 

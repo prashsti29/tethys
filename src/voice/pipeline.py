@@ -17,11 +17,13 @@ from pipecat.services.piper.tts import PiperTTSService
 from pipecat.services.whisper.stt import WhisperSTTService
 
 from src.config import settings
+from src.orchestrator import VoiceAssistantOrchestrator
 
 logger = logging.getLogger(__name__)
 
 
 class TranscriptToTextProcessor(FrameProcessor):
+    """Collects STT transcriptions and forwards them downstream."""
 
     def __init__(self):
         super().__init__()
@@ -35,8 +37,52 @@ class TranscriptToTextProcessor(FrameProcessor):
             if text:
                 logger.info(f"[STT Transcript]: {text}")
                 self.transcriptions.append(text)
-                # Forward as TextFrame so TTS synthesizes response speech
-                await self.push_frame(TextFrame(text=f"Echoing back: {text}"))
+                # Forward the TranscriptionFrame for downstream processors
+                await self.push_frame(frame, direction)
+        else:
+            await self.push_frame(frame, direction)
+
+
+class OrchestratorProcessor(FrameProcessor):
+    """Intercepts TranscriptionFrames, runs the medical orchestrator pipeline,
+    and emits a TextFrame with the patient-facing response."""
+
+    def __init__(self, patient_name: str = "Patient"):
+        super().__init__()
+        self.orchestrator = VoiceAssistantOrchestrator()
+        self.patient_name = patient_name
+        self.conversation_history: List[str] = []
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+
+        if isinstance(frame, TranscriptionFrame):
+            text = frame.text.strip()
+            if not text:
+                return
+
+            logger.info(f"[Orchestrator] Processing: '{text}'")
+
+            # Run orchestrator in a thread to avoid blocking the async pipeline
+            result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: self.orchestrator.run(
+                    user_input=text,
+                    patient_name=self.patient_name,
+                    conversation_history=self.conversation_history if self.conversation_history else None,
+                ),
+            )
+
+            # Track conversation history for multi-turn
+            self.conversation_history.append(f"Patient: {text}")
+            self.conversation_history.append(f"Assistant: {result.response_text}")
+
+            logger.info(f"[Orchestrator] Response: '{result.response_text}'")
+            if result.awaiting_patient_reply:
+                logger.info("[Orchestrator] Awaiting patient reply for next turn")
+
+            # Emit the response as a TextFrame for TTS
+            await self.push_frame(TextFrame(text=result.response_text))
         else:
             await self.push_frame(frame, direction)
 
