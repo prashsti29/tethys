@@ -30,6 +30,22 @@ class Settings(BaseModel):
         str(BASE_DIR / "models" / "piper" / "en_US-lessac-medium.onnx")
     )
 
+    # Latency Instrumentation
+    LATENCY_LOGGING_ENABLED: bool = os.getenv("LATENCY_LOGGING_ENABLED", "true").lower() == "true"
+    LATENCY_AGGREGATE_INTERVAL: int = int(os.getenv("LATENCY_AGGREGATE_INTERVAL", "10"))  # log P50/P95 every N turns
+
+    # VAD & Turn Detection
+    VAD_SILENCE_TIMEOUT_MS: int = int(os.getenv("VAD_SILENCE_TIMEOUT_MS", "1200"))  # higher for medical conversations
+    VAD_ADAPTIVE_ENABLED: bool = os.getenv("VAD_ADAPTIVE_ENABLED", "true").lower() == "true"
+
+    # Barge-In & Backchannel
+    BACKCHANNEL_DETECTION_ENABLED: bool = os.getenv("BACKCHANNEL_DETECTION_ENABLED", "true").lower() == "true"
+    BACKCHANNEL_MAX_DURATION_MS: int = int(os.getenv("BACKCHANNEL_MAX_DURATION_MS", "600"))
+
+    # Safety Gate
+    SAFETY_GATE_ENABLED: bool = os.getenv("SAFETY_GATE_ENABLED", "true").lower() == "true"
+    SAFETY_GATE_HOLDBACK_TOKENS: int = int(os.getenv("SAFETY_GATE_HOLDBACK_TOKENS", "20"))
+
     @property
     def DATABASE_URL(self) -> str:
         return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
