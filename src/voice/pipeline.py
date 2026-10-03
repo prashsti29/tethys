@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from pipecat.frames.frames import (
     AudioRawFrame,
@@ -18,6 +18,7 @@ from pipecat.services.whisper.stt import WhisperSTTService
 
 from src.config import settings
 from src.orchestrator import VoiceAssistantOrchestrator
+from src.telemetry.latency import LatencyTracer
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +26,10 @@ logger = logging.getLogger(__name__)
 class TranscriptToTextProcessor(FrameProcessor):
     """Collects STT transcriptions and forwards them downstream."""
 
-    def __init__(self):
+    def __init__(self, latency_tracer: Optional[LatencyTracer] = None):
         super().__init__()
         self.transcriptions: List[str] = []
+        self._tracer = latency_tracer
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -35,6 +37,9 @@ class TranscriptToTextProcessor(FrameProcessor):
         if isinstance(frame, TranscriptionFrame):
             text = frame.text.strip()
             if text:
+                # Stamp: STT produced a final transcript
+                if self._tracer:
+                    self._tracer.record("stt_final")
                 logger.info(f"[STT Transcript]: {text}")
                 self.transcriptions.append(text)
                 # Forward the TranscriptionFrame for downstream processors
@@ -47,11 +52,12 @@ class OrchestratorProcessor(FrameProcessor):
     """Intercepts TranscriptionFrames, runs the medical orchestrator pipeline,
     and emits a TextFrame with the patient-facing response."""
 
-    def __init__(self, patient_name: str = "Patient"):
+    def __init__(self, patient_name: str = "Patient", latency_tracer: Optional[LatencyTracer] = None):
         super().__init__()
         self.orchestrator = VoiceAssistantOrchestrator()
         self.patient_name = patient_name
         self.conversation_history: List[str] = []
+        self._tracer = latency_tracer
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -62,6 +68,10 @@ class OrchestratorProcessor(FrameProcessor):
                 return
 
             logger.info(f"[Orchestrator] Processing: '{text}'")
+
+            # Stamp: LLM / orchestrator work begins
+            if self._tracer:
+                self._tracer.record("llm_first_token")
 
             # Run orchestrator in a thread to avoid blocking the async pipeline
             result = await asyncio.get_event_loop().run_in_executor(
@@ -85,6 +95,25 @@ class OrchestratorProcessor(FrameProcessor):
             await self.push_frame(TextFrame(text=result.response_text))
         else:
             await self.push_frame(frame, direction)
+
+
+class TTSLatencyStamper(FrameProcessor):
+    """Stamps 'tts_first_byte' on the first AudioRawFrame seen in a turn."""
+
+    def __init__(self, latency_tracer: Optional[LatencyTracer] = None):
+        super().__init__()
+        self._tracer = latency_tracer
+        self._stamped = False
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+        if isinstance(frame, AudioRawFrame) and not self._stamped and self._tracer:
+            self._tracer.record("tts_first_byte")
+            self._stamped = True
+        await self.push_frame(frame, direction)
+
+    def reset(self) -> None:
+        self._stamped = False
 
 
 class AudioSaverProcessor(FrameProcessor):
