@@ -102,3 +102,44 @@ class BackchannelDetector:
         return BackchannelResult(
             is_backchannel=False, text=text, duration_ms=duration_ms, reason=reason
         )
+
+
+class BargeInController:
+    """
+    Manages VAD activity state, interruption signals, and active LLM/TTS playout cancellation.
+    """
+
+    def __init__(self, detector: Optional[BackchannelDetector] = None):
+        self.detector = detector or BackchannelDetector()
+        self.is_speaking: bool = False
+        self.is_assistant_speaking: bool = False
+
+    def on_user_speech_start(self) -> None:
+        """Signaled when user speech starts."""
+        self.is_speaking = True
+        self.detector.on_speech_start()
+        logger.info("[VAD Activity]: User started speaking")
+
+    def on_user_speech_end(self) -> Optional[float]:
+        """Signaled when user speech ends."""
+        self.is_speaking = False
+        duration_ms = self.detector.on_speech_end()
+        logger.info(f"[VAD Activity]: User stopped speaking (duration: {duration_ms}ms)")
+        return duration_ms
+
+    def should_interrupt(self, transcript_text: str) -> bool:
+        """
+        Determines whether the assistant output should be interrupted given the latest speech segment.
+        """
+        if not self.is_assistant_speaking:
+            return False
+
+        duration_ms = self.detector.on_speech_end()
+        res = self.detector.classify(transcript_text, duration_ms=duration_ms)
+        if res.is_backchannel:
+            logger.info(f"[BargeInController] Ignoring backchannel: '{transcript_text}'")
+            return False
+
+        logger.info(f"[BargeInController] REAL INTERRUPTION DETECTED: '{transcript_text}'")
+        return True
+

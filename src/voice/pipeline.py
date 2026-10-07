@@ -50,14 +50,21 @@ class TranscriptToTextProcessor(FrameProcessor):
 
 class OrchestratorProcessor(FrameProcessor):
     """Intercepts TranscriptionFrames, runs the medical orchestrator pipeline,
-    and emits a TextFrame with the patient-facing response."""
+    and emits a TextFrame with the patient-facing response. Supports task cancellation on barge-in."""
 
-    def __init__(self, patient_name: str = "Patient", latency_tracer: Optional[LatencyTracer] = None):
+    def __init__(
+        self,
+        patient_name: str = "Patient",
+        latency_tracer: Optional[LatencyTracer] = None,
+        barge_in_controller: Optional[object] = None,
+    ):
         super().__init__()
         self.orchestrator = VoiceAssistantOrchestrator()
         self.patient_name = patient_name
         self.conversation_history: List[str] = []
         self._tracer = latency_tracer
+        self.barge_in_controller = barge_in_controller
+        self._current_task: Optional[asyncio.Task] = None
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
@@ -67,21 +74,45 @@ class OrchestratorProcessor(FrameProcessor):
             if not text:
                 return
 
+            # Check if this transcript constitutes an interruption
+            if self.barge_in_controller and hasattr(self.barge_in_controller, "should_interrupt"):
+                if self.barge_in_controller.should_interrupt(text):
+                    logger.info("[Orchestrator] Interruption triggered! Canceling active LLM task.")
+                    if self._current_task and not self._current_task.done():
+                        self._current_task.cancel()
+
             logger.info(f"[Orchestrator] Processing: '{text}'")
 
-            # Stamp: LLM / orchestrator work begins
             if self._tracer:
                 self._tracer.record("llm_first_token")
 
-            # Run orchestrator in a thread to avoid blocking the async pipeline
-            result = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: self.orchestrator.run(
-                    user_input=text,
-                    patient_name=self.patient_name,
-                    conversation_history=self.conversation_history if self.conversation_history else None,
-                ),
+            if self.barge_in_controller and hasattr(self.barge_in_controller, "is_assistant_speaking"):
+                self.barge_in_controller.is_assistant_speaking = True
+
+            loop = asyncio.get_event_loop()
+            self._current_task = loop.create_task(
+                loop.run_in_executor(
+                    None,
+                    lambda: self.orchestrator.run(
+                        user_input=text,
+                        patient_name=self.patient_name,
+                        conversation_history=self.conversation_history if self.conversation_history else None,
+                    ),
+                )
             )
+
+            try:
+                result = await self._current_task
+            except asyncio.CancelledError:
+                logger.info("[Orchestrator] Turn execution cancelled due to barge-in.")
+                if self.barge_in_controller and hasattr(self.barge_in_controller, "is_assistant_speaking"):
+                    self.barge_in_controller.is_assistant_speaking = False
+                return
+            finally:
+                self._current_task = None
+
+            if self.barge_in_controller and hasattr(self.barge_in_controller, "is_assistant_speaking"):
+                self.barge_in_controller.is_assistant_speaking = False
 
             # Track conversation history for multi-turn
             self.conversation_history.append(f"Patient: {text}")
@@ -91,10 +122,10 @@ class OrchestratorProcessor(FrameProcessor):
             if result.awaiting_patient_reply:
                 logger.info("[Orchestrator] Awaiting patient reply for next turn")
 
-            # Emit the response as a TextFrame for TTS
             await self.push_frame(TextFrame(text=result.response_text))
         else:
             await self.push_frame(frame, direction)
+
 
 
 class TTSLatencyStamper(FrameProcessor):
