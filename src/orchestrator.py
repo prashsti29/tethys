@@ -39,13 +39,15 @@ class VoiceAssistantOrchestrator:
       2. RedFlagClassifier — check for medical emergencies
       3. RoutingAgent      — match symptoms to specialty via RAG
       4. SchedulingAgent   — find slots & book appointment
+    Supports automatic mid-call state persistence and session re-hydration via SessionStore.
     """
 
-    def __init__(self):
+    def __init__(self, session_store: Optional[object] = None):
         self.intake_agent = IntakeAgent()
         self.guardrail = RedFlagClassifier()
         self.routing_agent = RoutingAgent()
         self.scheduling_agent = SchedulingAgent()
+        self.session_store = session_store
 
     def run(
         self,
@@ -53,11 +55,19 @@ class VoiceAssistantOrchestrator:
         patient_name: str = "Patient",
         conversation_history: Optional[List[str]] = None,
         auto_book: bool = True,
+        session_id: Optional[str] = None,
     ) -> OrchestratorResult:
         """
         Full pipeline: text in → OrchestratorResult out.
-        Set auto_book=False to skip appointment booking (for follow-up turns).
+        If session_id is provided, loads and re-hydrates prior context automatically.
         """
+        if session_id and self.session_store and hasattr(self.session_store, "load_session"):
+            saved_state = self.session_store.load_session(session_id)
+            if saved_state:
+                logger.info(f"[Orchestrator] Re-hydrated context for session: {session_id}")
+                if not conversation_history:
+                    conversation_history = saved_state.conversation_history
+                patient_name = saved_state.patient_name
         logger.info(f"\n{'='*60}")
         logger.info(f"[Orchestrator] INPUT: '{user_input}'")
         logger.info(f"{'='*60}")
